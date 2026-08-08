@@ -1,12 +1,17 @@
 import time
+from include.engineModel import Engine_model
 #my main controller
 class Session:
-    def __init__(self):
+    def __init__(self, engine_instance, audio_instance):
         self.running = False
         self.paused = False
         self.rate = 1.0
         self.volume = 1.0
-        self.active_preset = None
+
+        self.engine = engine_instance
+        self.audio = audio_instance
+
+        self.active_preset = self.engine.current_preset_id
         
         # КОЛЛБЭКИ
         self.on_start = None
@@ -106,16 +111,6 @@ class Session:
         
         return True, f"Громкость: {int(value*100)}%"
     
-    def set_preset(self, preset_id, preset_name, preset_prompt):
-        self.active_preset = preset_id
-        self._add_log("sys", f"Пресет: {preset_name}")
-        
-        # РУЧКА
-        if self.on_preset_change:
-            self.on_preset_change(preset_id, preset_name, preset_prompt)
-        
-        return True, f"Пресет: {preset_name}"
-    
     def set_device(self, kind, device_id, device_label):
         self._add_log("sys", f"Устройство ({kind}): {device_label}")
         
@@ -124,6 +119,51 @@ class Session:
             self.on_device_change(kind, device_id, device_label)
         
         return True, f"Устройство: {device_label}"
+
+    def get_available_presets(self):
+        """Flask вызывает этот метод, а сессия перенаправляет запрос в движок"""
+        return self.engine.get_presets_list()
+
+    def set_preset(self, preset_id):
+        """Управление пресетом: забираем данные из движка и применяем их"""
+        preset_data = self.engine.get_preset_data(preset_id)
+        if not preset_data:
+            return False, f"Пресет {preset_id} не найден в движке"
+            
+        self.active_preset = preset_id
+        preset_name = preset_data["name"]
+        preset_prompt = preset_data["prompt"]
+        
+        # Принудительно меняет промпт внутри самого движка модели
+        self.engine.set_active_prompt(preset_prompt)
+        self.engine.current_preset_id = preset_id
+
+        self._add_log("sys", f"Пресет изменен на: {preset_name}")
+        
+        # Вызывает коллбэк для внешней бизнес-логики
+        if self.on_preset_change:
+            self.on_preset_change(preset_id, preset_name, preset_prompt)
+            
+        return True, f"Пресет: {preset_name}"
+
+
+    def get_available_devices(self):
+        """запрашивает РЕАЛЬНЫЕ устройства у аудио-сервиса"""
+        return self.audio.get_system_devices()
+
+    def set_device(self, kind, device_id, device_label):
+        """Управляет переключением устройства"""
+        # 1. Даем команду аудио-сервису физически переключить поток в ОС
+        self.audio.switch_device(kind, device_id)
+        
+        self._add_log("sys", f"Устройство ({kind}): {device_label}")
+        
+        # 2. РУЧКА: уведомляем внешние коллбэки бизнес-логики
+        if self.on_device_change:
+            self.on_device_change(kind, device_id, device_label)
+        
+        return True, f"Устройство: {device_label}"
+
     
     def get_state(self):
         return {

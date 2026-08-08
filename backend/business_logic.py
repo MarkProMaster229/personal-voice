@@ -1,5 +1,11 @@
 from backend.session import Session
-session = Session()
+from include.engineModel import Engine_model
+from include.audioService import AudioService
+
+ollama_engine = Engine_model()
+audio_service = AudioService()
+
+session = Session(engine_instance=ollama_engine, audio_instance=audio_service)
 
 def on_session_start():
     """Вызывается когда юзер нажал СТАРТ"""

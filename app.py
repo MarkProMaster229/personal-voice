@@ -21,24 +21,14 @@ def create_app(session):
 
     @app.route("/api/devices")
     def get_devices():
-        return jsonify({
-            "inputs": [
-                {"id": "mic-0", "label": "Микрофон (VB-Cable)"},
-                {"id": "mic-1", "label": "Микрофон (Встроенный)"}
-            ],
-            "outputs": [
-                {"id": "out-0", "label": "Динамики (Realtek)"},
-                {"id": "out-1", "label": "Наушники (USB)"}
-            ]
-        })
+        s = app.config['SESSION']
+        return jsonify(s.get_available_devices())
 
     @app.route("/api/presets")
     def get_presets():
-        return jsonify([
-            {"id": "p1", "name": "Ассистент", "prompt": "Ты – полезный голосовой ассистент."},
-            {"id": "p2", "name": "Переводчик", "prompt": "Ты переводишь речь с русского на английский."},
-            {"id": "p3", "name": "Собеседник", "prompt": "Ты – дружелюбный собеседник."}
-        ])
+        s = app.config['SESSION']
+        # Сессия сама спросит у движка и отдаст массив [{'id': 'p1', 'name': 'Ассистент'}]
+        return jsonify(s.get_available_presets())
 
     @app.route("/api/command", methods=["POST"])
     def handle_command():
@@ -58,6 +48,10 @@ def create_app(session):
             ok, msg = s.set_rate(data.get("value", 1.0))
         elif cmd == "set_volume":
             ok, msg = s.set_volume(data.get("value", 1.0))
+        elif cmd == "set_preset":
+            preset_id = data.get("value") # Передаем, например, p2 - временно
+            ok, msg = s.set_preset(preset_id)
+            return jsonify({"ok": ok, "message": msg})
         else:
             return jsonify({"ok": False, "error": f"unknown command: {cmd}"}), 400
 
