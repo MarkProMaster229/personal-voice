@@ -1,3 +1,4 @@
+import ollama
 class Engine_model:
     def __init__(self):
         self._presets = {
@@ -8,6 +9,8 @@ class Engine_model:
         self.current_preset_id = "p1"
         self.start_flag = False
 
+        self.active_prompt = self._presets["p1"]["prompt"]
+
     def get_presets_list(self):
         """Возвращает безопасный список пресетов (только ID и Имя) для Flask"""
         return [{"id": k, "name": v["name"]} for k, v in self._presets.items()]
@@ -17,8 +20,21 @@ class Engine_model:
         return self._presets.get(preset_id)
 
     def set_active_prompt(self, prompt: str):
-        """Здесь будет логика наката промпта на Ollama"""
-        print(f">>> ДВИЖОК: Системный промпт изменен на: '{prompt}'")
+        self.active_prompt = prompt
+        print(f"Системный промпт изменен на: '{prompt}'")
 
-    def ollama_eng(self):
+    def ollama_eng(self, user_text: str):
         print("this the ollama engine")
+        
+        try:
+            response = ollama.generate(
+                model="qwen2.5-coder:1.5b",  # вот тут пока хардкод будем решать что делать нам с тобой
+                system=self.active_prompt,  # тут тоже хардкод из трех промтов растянем из пресетов
+                prompt=user_text
+            )
+            print(response['response'])
+            return response['response']
+            
+        except Exception as e:
+            print(f"Ошибка генерации: {e}")
+            return ""
