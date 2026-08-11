@@ -1,0 +1,8 @@
+flask
+flask-cors
+sounddevice
+numpy
+httpx
+torch
+transformers
+accelerate

@@ -36,7 +36,7 @@ class OllamaManager:
     def download_and_install(self):
         if self.os_type == "windows":
             installer_url = "https://ollama.com/download/OllamaSetup.exe" 
-            installer_path = os.path.join(os.environ.get("TEMP", "."), "OllamaSetup.exe")
+            installer_path = os.path.join(os.environ.get("TEMP", ""), "OllamaSetup.exe")
             
             print(f"Ollama for Windows")
             urllib.request.urlretrieve(installer_url, installer_path)
