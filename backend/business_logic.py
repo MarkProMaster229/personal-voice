@@ -19,18 +19,17 @@ session = Session(
 
 def on_session_start():
     print(">>> БИЗНЕС-ЛОГИКА: запуск распознавания речи")
-    ok, msg = speech_service.start(session._on_transcript)
-    if not ok:
-        session.running = False
-        session._add_log("err", f"Не удалось запустить STT: {msg}")
-        print(f"[ERROR] {msg}")
+    # ВАЖНО: мы больше не запускаем непрерывное прослушивание,
+    # потому что используется push-to-talk через start_recording/stop_recording.
+    # Но можно оставить для совместимости, если нужно.
+    pass
 
 def on_session_stop():
     print(">>> БИЗНЕС-ЛОГИКА: остановка")
     speech_service.stop()
 
 def on_session_pause():
-    print(">>> БИЗНЕС-ЛОГИКА: пауза (STT продолжает работать)")
+    print(">>> БИЗНЕС-ЛОГИКА: пауза")
 
 def on_session_resume():
     print(">>> БИЗНЕС-ЛОГИКА: продолжение")
@@ -54,9 +53,8 @@ def on_device_changed(kind, device_id, label):
         audio_service.switch_device(kind, device_id)
 
 def on_transcript_handler(text: str):
-    """Обработка распознанного текста."""
+    """Обработка распознанного текста: отправка в Ollama и логирование ответа."""
     print(f"🎤 Распознано: {text}")
-    # Отправляем в движок
     response = ollama_engine.generate(text)
     if response:
         session._add_log("out", response)

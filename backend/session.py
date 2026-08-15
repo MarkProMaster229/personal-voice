@@ -4,12 +4,13 @@ class Session:
     def __init__(self, engine_instance, audio_instance, speech_instance):
         self.running = False
         self.paused = False
+        self.recording = False
         self.rate = 1.0
         self.volume = 1.0
 
         self.engine = engine_instance
         self.audio = audio_instance
-        self.speech = speech_instance  # STT сервис
+        self.speech = speech_instance
 
         self.active_preset = self.engine.current_preset_id
 
@@ -22,7 +23,9 @@ class Session:
         self.on_volume_change = None
         self.on_preset_change = None
         self.on_device_change = None
-        self.on_transcript = None  # <-- новый колбэк для распознанного текста
+        self.on_transcript = None
+        self.on_record_start = None
+        self.on_record_stop = None
 
         self.logs = []
         self._add_log("sys", "Сессия создана")
@@ -50,6 +53,7 @@ class Session:
             return False, "Уже запущено"
         self.running = True
         self.paused = False
+        self.recording = False
         self._add_log("out", "▶ Старт")
         if self.on_start:
             self.on_start()
@@ -60,6 +64,13 @@ class Session:
             return False, "Не запущено"
         self.running = False
         self.paused = False
+        self.recording = False
+        # Останавливаем запись, если она шла
+        if self.speech and hasattr(self.speech, 'stop_recording'):
+            try:
+                self.speech.stop_recording()
+            except Exception:
+                pass
         self._add_log("out", "■ Стоп")
         if self.on_stop:
             self.on_stop()
@@ -136,10 +147,39 @@ class Session:
     def get_available_devices(self):
         return self.audio.get_system_devices()
 
+    def start_recording(self):
+        if not self.running:
+            return False, "Сессия не запущена"
+        if self.recording:
+            return False, "Уже идёт запись"
+        ok, msg = self.speech.start_recording(self._on_transcript)
+        if ok:
+            self.recording = True
+            self._add_log("out", "Запись начата")
+            if self.on_record_start:
+                self.on_record_start()
+        else:
+            self._add_log("err", msg)
+        return ok, msg
+
+    def stop_recording(self):
+        if not self.recording:
+            return False, "Запись не идёт"
+        ok, msg = self.speech.stop_recording()
+        if ok:
+            self.recording = False
+            self._add_log("out", "Запись остановлена")
+            if self.on_record_stop:
+                self.on_record_stop()
+        else:
+            self._add_log("err", msg)
+        return ok, msg
+
     def get_state(self):
         return {
             "running": self.running,
             "paused": self.paused,
+            "recording": self.recording,
             "rate": self.rate,
             "volume": self.volume,
             "active_preset": self.active_preset,

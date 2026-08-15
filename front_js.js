@@ -2,7 +2,7 @@ const $ = s => document.querySelector(s);
 const logBox = $('#log'), led = $('#led'), statusText = $('#statusText');
 const selMic = $('#selMic'), selOut = $('#selOut');
 const sldRate = $('#sldRate'), sldVol = $('#sldVol'), rateVal = $('#rateVal'), volVal = $('#volVal');
-const btnStart = $('#btnStart'), btnPause = $('#btnPause');
+const btnStart = $('#btnStart'), btnPause = $('#btnPause'), btnRecord = $('#btnRecord');
 const chips = $('#chips'), promptText = $('#promptText');
 const btnAdd = $('#btnAddPreset');
 
@@ -10,7 +10,7 @@ const modal = $('#presetModal'), modalTitle = $('#modalTitle'), modalClose = $('
 const pName = $('#pName'), pPrompt = $('#pPrompt');
 const btnSave = $('#btnSave'), btnCancel = $('#btnCancel'), btnDelete = $('#btnDelete');
 
-// Новые элементы для Ollama
+// Ollama
 const ollamaBox = $('#ollamaBox');
 const ollamaStatus = $('#ollamaStatus');
 const ollamaActions = $('#ollamaActions');
@@ -19,12 +19,13 @@ const btnInstallOllama = $('#btnInstallOllama');
 const selModel = $('#selModel');
 const btnDownloadModel = $('#btnDownloadModel');
 
-// Текстовые иконки (надёжнее SVG)
 const ICON_PLAY = '▶';
 const ICON_STOP = '■';
 const ICON_PAUSE = '❚❚';
+const ICON_REC = '🎤';
+const ICON_REC_STOP = '⏹';
 
-let running = false, paused = false;
+let running = false, paused = false, recording = false;
 let presets = [];
 let activePresetId = null;
 let logCount = 0;
@@ -227,7 +228,53 @@ btnDownloadModel.onclick = async () => {
   btnDownloadModel.textContent = 'Скачать модель';
 };
 
-// --- ОСТАЛЬНОЙ КОД ---
+// --- ЗАПИСЬ (toggle) ---
+
+function startRecording() {
+  if (recording) return;
+  Backend.cmd('start_recording').then(res => {
+    if (res.ok) {
+      recording = true;
+      ui();
+    } else {
+      renderLog({ time: new Date().toLocaleTimeString(), type: 'err', msg: res.message || 'Ошибка начала записи' });
+    }
+  });
+}
+
+function stopRecording() {
+  if (!recording) return;
+  Backend.cmd('stop_recording').then(res => {
+    if (res.ok) {
+      recording = false;
+      ui();
+    } else {
+      renderLog({ time: new Date().toLocaleTimeString(), type: 'err', msg: res.message || 'Ошибка остановки записи' });
+    }
+  });
+}
+
+// Кнопка записи: одно нажатие – старт, второе – стоп
+btnRecord.addEventListener('click', () => {
+  if (recording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+});
+
+// Клавиша Q: переключатель
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'q' || e.key === 'Q') {
+    if (recording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
+});
+
+// --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
 
 function renderLog(e) {
   const near = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 50;
@@ -259,6 +306,7 @@ function updSliders() {
   paint(sldRate);
   paint(sldVol);
 }
+
 sldRate.oninput = () => {
   updSliders();
   Backend.cmd('set_rate', { value: parseFloat(sldRate.value) });
@@ -353,33 +401,28 @@ btnDelete.onclick = async () => {
 };
 
 function ui() {
+  // Кнопки start/pause/record
   btnStart.innerHTML = running ? ICON_STOP : ICON_PLAY;
   btnStart.title = running ? 'Стоп' : 'Старт';
   btnStart.classList.toggle('on', running);
   btnPause.disabled = !running;
   btnPause.innerHTML = ICON_PAUSE;
   btnPause.classList.toggle('hold', paused);
-  led.className = 'led' + (running ? (paused ? ' pause' : ' on') : '');
-  statusText.textContent = running ? (paused ? 'ПАУЗА' : 'РАБОТА') : 'ОЖИДАНИЕ';
-}
 
-btnStart.onclick = async () => {
-  const r = await Backend.cmd(running ? 'stop' : 'start');
-  if (r.ok) {
-    running = !running;
-    paused = false;
+  if (recording) {
+    led.className = 'led record';
+    statusText.textContent = 'ЗАПИСЬ';
+    btnRecord.classList.add('recording');
+    btnRecord.textContent = ICON_REC_STOP;
+    btnRecord.title = 'Остановить запись';
   } else {
-    renderLog({ time: new Date().toLocaleTimeString(), type: 'err', msg: r.message || r.error || 'Ошибка команды' });
+    led.className = 'led' + (running ? (paused ? ' pause' : ' on') : '');
+    statusText.textContent = running ? (paused ? 'ПАУЗА' : 'РАБОТА') : 'ОЖИДАНИЕ';
+    btnRecord.classList.remove('recording');
+    btnRecord.textContent = ICON_REC;
+    btnRecord.title = 'Начать запись';
   }
-  ui();
-};
-
-btnPause.onclick = async () => {
-  if (!running) return;
-  const r = await Backend.cmd(paused ? 'resume' : 'pause');
-  if (r.ok) paused = !paused;
-  ui();
-};
+}
 
 async function poll() {
   try {
@@ -395,6 +438,10 @@ async function poll() {
       paused = st.paused;
       ui();
     }
+    if (st.recording !== undefined && st.recording !== recording) {
+      recording = st.recording;
+      ui();
+    }
     if (st.active_preset && st.active_preset !== activePresetId) {
       activePresetId = st.active_preset;
       renderPresets();
@@ -404,10 +451,12 @@ async function poll() {
   }
 }
 
-// === ЯВНАЯ ИНИЦИАЛИЗАЦИЯ UI ===
-// Вызываем до запуска контроллера, чтобы кнопки получили иконки
+// === ИНИЦИАЛИЗАЦИЯ ===
 updSliders();
 ui();
+loadDevices();
+loadPresets();
+setInterval(poll, 500);
 
 // === КОНТРОЛЛЕР ===
 class Controller {
@@ -416,6 +465,7 @@ class Controller {
     this.state = {
       running: false,
       paused: false,
+      recording: false,
       presets: [],
       activePreset: null,
       logCount: 0
@@ -425,7 +475,7 @@ class Controller {
   }
   patchBackend() {
     const self = this;
-    
+
     const existingBackend = window.Backend || {};
 
     window.Backend = Object.assign({}, existingBackend, {
@@ -436,7 +486,7 @@ class Controller {
             console.error('getDevices error:', e);
             return { inputs: [], outputs: [] };
           }),
-      
+
       setDevice: (kind, id) =>
         fetch(`${self.baseUrl}/api/devices/set`, {
           method: 'POST',
@@ -444,7 +494,7 @@ class Controller {
           body: JSON.stringify({ kind, id })
         }).then(r => r.json())
           .catch(() => ({ ok: true })),
-      
+
       getPresets: () =>
         fetch(`${self.baseUrl}/api/presets`)
           .then(r => r.json())
@@ -456,7 +506,7 @@ class Controller {
             console.error('getPresets error:', e);
             return [];
           }),
-      
+
       cmd: (command, extra = {}) => {
         const body = { cmd: command, ...extra };
         return fetch(`${self.baseUrl}/api/command`, {
@@ -467,7 +517,7 @@ class Controller {
           .then(r => r.json())
           .then(res => {
             if (!res.ok) throw new Error(res.error || 'Command failed');
-            switch(command) {
+            switch (command) {
               case 'start':
                 self.state.running = true;
                 self.state.paused = false;
@@ -482,16 +532,22 @@ class Controller {
               case 'resume':
                 self.state.paused = false;
                 break;
+              case 'start_recording':
+                self.state.recording = true;
+                break;
+              case 'stop_recording':
+                self.state.recording = false;
+                break;
             }
-            
+
             self.syncUI();
             return res;
           })
           .catch(e => {
-            renderLog({ 
-              time: new Date().toLocaleTimeString(), 
-              type: 'err', 
-              msg: `Ошибка команды ${command}: ${e.message}` 
+            renderLog({
+              time: new Date().toLocaleTimeString(),
+              type: 'err',
+              msg: `Ошибка команды ${command}: ${e.message}`
             });
             throw e;
           });
@@ -499,22 +555,22 @@ class Controller {
     });
 
     window.Backend.getOllamaStatus = () =>
-      fetch(`${self.baseUrl}/api/ollama/status`).then(r => r.json()).catch(() => ({installed:false, running:false}));
+      fetch(`${self.baseUrl}/api/ollama/status`).then(r => r.json()).catch(() => ({ installed: false, running: false }));
     window.Backend.installOllama = () =>
-      fetch(`${self.baseUrl}/api/ollama/install`, {method:'POST'}).then(r => r.json());
+      fetch(`${self.baseUrl}/api/ollama/install`, { method: 'POST' }).then(r => r.json());
     window.Backend.getOllamaModels = () =>
       fetch(`${self.baseUrl}/api/ollama/models`).then(r => r.json()).catch(() => []);
     window.Backend.downloadModel = (modelId) =>
       fetch(`${self.baseUrl}/api/ollama/models/download`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: modelId })
       }).then(r => r.json());
   }
 
   patchButtons() {
     const self = this;
-    
+
     btnStart.onclick = async () => {
       const cmd = self.state.running ? 'stop' : 'start';
       try {
@@ -531,19 +587,20 @@ class Controller {
       } catch (e) {
       }
     };
+    // Кнопка записи обрабатывается отдельно (в глобальной части)
   }
 
   patchSliders() {
     const self = this;
     const originalRateInput = sldRate.oninput;
     const originalVolInput = sldVol.oninput;
-    
+
     sldRate.oninput = (e) => {
       if (originalRateInput) originalRateInput(e);
       const value = parseFloat(sldRate.value);
       Backend.cmd('set_rate', { value });
     };
-    
+
     sldVol.oninput = (e) => {
       if (originalVolInput) originalVolInput(e);
       const value = parseFloat(sldVol.value);
@@ -554,6 +611,7 @@ class Controller {
   syncUI() {
     window.running = this.state.running;
     window.paused = this.state.paused;
+    window.recording = this.state.recording;
     if (typeof ui === 'function') {
       ui();
     }
@@ -564,7 +622,7 @@ class Controller {
       try {
         const logsResp = await fetch(`${this.baseUrl}/api/logs?since=${this.state.logCount}`)
           .then(r => r.json());
-        
+
         if (logsResp.logs && logsResp.logs.length > 0) {
           logsResp.logs.forEach(entry => {
             if (typeof renderLog === 'function') {
@@ -573,17 +631,19 @@ class Controller {
           });
           this.state.logCount = logsResp.count;
         }
-        
+
         const serverState = await fetch(`${this.baseUrl}/api/state`)
           .then(r => r.json());
-        
-        if (serverState.running !== this.state.running || 
-            serverState.paused !== this.state.paused) {
+
+        if (serverState.running !== this.state.running ||
+            serverState.paused !== this.state.paused ||
+            serverState.recording !== this.state.recording) {
           this.state.running = serverState.running;
           this.state.paused = serverState.paused;
+          this.state.recording = serverState.recording || false;
           this.syncUI();
         }
-        
+
       } catch (e) {
         console.warn('Polling error:', e.message);
       }
@@ -592,12 +652,12 @@ class Controller {
 
   init() {
     console.log('Controller: init start');
-    
+
     this.patchBackend();
     this.patchButtons();
     this.patchSliders();
     this.startPolling();
-    
+
     setTimeout(() => {
       if (typeof loadDevices === 'function') loadDevices();
       if (typeof loadPresets === 'function') loadPresets();
@@ -614,7 +674,7 @@ class Controller {
   }
 }
 
-// Запуск
+// Запуск контроллера
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     new Controller('');
