@@ -94,7 +94,10 @@ def create_app(session):
             ok, msg = s.set_sensitivity(float(data.get("value", 0.01)))
         elif cmd == "set_rate":
             ok, msg = s.set_rate(float(data.get("value", 1.0)))
-
+        elif cmd == "start_recording":
+            ok, msg = s.start_recording()
+        elif cmd == "stop_recording":
+            ok, msg = s.stop_recording()
         elif cmd == "start_recording":
             ok, msg = s.start_recording()
         elif cmd == "stop_recording":

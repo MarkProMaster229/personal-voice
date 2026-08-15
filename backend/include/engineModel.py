@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 
 
 class Engine_model:
+    """AI-движок на базе Ollama."""
 
     def __init__(self, api_url: str = "http://localhost:11434", model_id: str = "MarkProMaster229/correctional-GPTaM"):
         self.api_url = api_url

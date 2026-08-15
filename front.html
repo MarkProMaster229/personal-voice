@@ -41,7 +41,7 @@
         <div class="btns">
           <button class="ibtn" id="btnStart" title="Старт"></button>
           <button class="ibtn" id="btnPause" title="Пауза" disabled></button>
-          <button class="ibtn" id="btnRecord" title="Запись (удерживать)">🎤</button>
+          <button class="ibtn" id="btnRecord" title="Запись">🎤</button>
         </div>
         <section class="box presets">
           <label class="lbl">
@@ -93,6 +93,11 @@
   </div>
 </div>
 
-<script src="front_js.js"></script>
+<!-- Подключаем модули JS в правильном порядке -->
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/ollama.js"></script>
+<script src="js/recorder.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
