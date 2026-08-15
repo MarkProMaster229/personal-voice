@@ -13,6 +13,7 @@ class Session:
 
         self.active_preset = self.engine.current_preset_id
 
+        # Колбэки
         self.on_start = None
         self.on_stop = None
         self.on_pause = None
@@ -21,6 +22,7 @@ class Session:
         self.on_volume_change = None
         self.on_preset_change = None
         self.on_device_change = None
+        self.on_transcript = None  # <-- новый колбэк для распознанного текста
 
         self.logs = []
         self._add_log("sys", "Сессия создана")
@@ -40,6 +42,8 @@ class Session:
         if self.paused:
             return
         self._add_log("in", text)
+        if self.on_transcript:
+            self.on_transcript(text)
 
     def start(self):
         if self.running:
@@ -94,7 +98,6 @@ class Session:
         return True, f"Громкость: {int(value * 100)}%"
 
     def set_device(self, kind, device_id, device_label):
-        # Никаких прямых вызовов сервисов, только уведомление
         self._add_log("sys", f"Устройство ({kind}): {device_label}")
         if self.on_device_change:
             self.on_device_change(kind, device_id, device_label)

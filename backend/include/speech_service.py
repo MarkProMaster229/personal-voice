@@ -5,6 +5,13 @@ import queue
 import torch
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
+try:
+    from scipy.signal import resample_poly
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+    print("scipy не найден, использую простое прореживание")
+
 
 class SpeechService:
     def __init__(self):
@@ -14,35 +21,40 @@ class SpeechService:
         self.running = False
         self.audio_queue = queue.Queue()
         self.thread = None
-        self.sample_rate = 16000
+        self.whisper_sample_rate = 16000   # частота для Whisper
+        self.capture_sample_rate = 48000   # частота захвата с микрофона
         self.on_text = None
         self.input_device_id = None
-        self.device = "cpu"  # по умолчанию CPU, можно поменять
+        self.device = "cpu"                # принудительно CPU
+        self.silence_threshold = 0.01      # порог RMS для определения речи
+        self.chunk_seconds = 6             # длина накапливаемого аудио в секундах
 
-    def _has_cuda(self):
-        try:
-            return torch.cuda.is_available()
-        except Exception:
-            return False
+    def _resample(self, audio, orig_sr, target_sr):
+        """Передискретизация аудио с orig_sr на target_sr."""
+        if orig_sr == target_sr:
+            return audio
+        if HAS_SCIPY:
+            from math import gcd
+            g = gcd(orig_sr, target_sr)
+            up = target_sr // g
+            down = orig_sr // g
+            return resample_poly(audio, up, down).astype(np.float32)
+        else:
+            duration = len(audio) / orig_sr
+            new_len = int(duration * target_sr)
+            indices = np.linspace(0, len(audio) - 1, new_len)
+            return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
 
     def load_model(self):
         """Загружает модель Whisper и процессор."""
         if self.model is None:
             print("Скачиваю STT модель Whisper Large v3 Turbo...")
             model_name = "openai/whisper-large-v3-turbo"
-            use_cuda = self._has_cuda()
+            # Принудительно CPU
+            self.device = "cpu"
+            dtype = torch.float32
 
-            if use_cuda:
-                self.device = "cuda"
-                dtype = torch.float16
-            else:
-                self.device = "cpu"
-                dtype = torch.float32
-
-            # Процессор
             self.processor = AutoProcessor.from_pretrained(model_name)
-
-            # Модель
             self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
                 model_name,
                 torch_dtype=dtype,
@@ -70,16 +82,12 @@ class SpeechService:
         self.running = True
 
         try:
-            # Если input_device_id None, sounddevice сам выберет микрофон по умолчанию.
-            # Можно также получить список устройств и выбрать первое входное, если None.
             if self.input_device_id is None:
-                # Попробуем взять системное устройство по умолчанию
                 default_input = sd.default.device[0]
                 if default_input is not None and default_input >= 0:
                     self.input_device_id = default_input
                     print(f"Использую микрофон по умолчанию (device_id={self.input_device_id})")
                 else:
-                    # Если default не задан, попробуем найти первый входной девайс
                     devices = sd.query_devices()
                     for i, dev in enumerate(devices):
                         if dev['max_input_channels'] > 0:
@@ -89,14 +97,28 @@ class SpeechService:
                     if self.input_device_id is None:
                         raise ValueError("Не найден входной аудиоустройство")
 
-            self.stream = sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=1,
-                device=self.input_device_id,
-                dtype='float32',
-                blocksize=int(self.sample_rate * 2),
-                callback=self._audio_callback
-            )
+            # Пробуем открыть поток с частотой 48000, если не получится – 44100
+            stream = None
+            for sr in (48000, 44100):
+                try:
+                    stream = sd.InputStream(
+                        samplerate=sr,
+                        channels=1,
+                        device=self.input_device_id,
+                        dtype='float32',
+                        blocksize=int(sr * 2),  # 2 секунды
+                        callback=self._audio_callback
+                    )
+                    self.capture_sample_rate = sr
+                    print(f"Захват аудио с частотой {sr} Гц")
+                    break
+                except Exception as e:
+                    print(f"Не удалось открыть поток с {sr} Гц: {e}")
+                    stream = None
+            if stream is None:
+                raise Exception("Не удалось открыть аудиопоток ни с одной поддерживаемой частотой")
+
+            self.stream = stream
             self.stream.start()
         except Exception as e:
             self.running = False
@@ -109,53 +131,62 @@ class SpeechService:
     def _audio_callback(self, indata, frames, time_info, status):
         if status:
             print(f"[STT] Audio status: {status}")
-        self.audio_queue.put(indata.copy().flatten())
+        piece = indata.copy().flatten()
+        rms = np.sqrt(np.mean(piece ** 2))
+        if rms >= self.silence_threshold:
+            self.audio_queue.put(piece)
 
     def _worker(self):
         buffer = np.array([], dtype=np.float32)
-        chunk_seconds = 6
 
         while self.running:
             try:
                 piece = self.audio_queue.get(timeout=0.5)
                 buffer = np.concatenate((buffer, piece))
 
-                if len(buffer) >= self.sample_rate * chunk_seconds:
-                    self._transcribe(buffer)
+                # Проверяем, накопили ли нужное количество активной речи
+                if len(buffer) >= self.capture_sample_rate * self.chunk_seconds:
+                    # Ресемплируем до частоты Whisper
+                    audio_for_whisper = self._resample(
+                        buffer,
+                        self.capture_sample_rate,
+                        self.whisper_sample_rate
+                    )
+                    self._transcribe(audio_for_whisper)
                     buffer = np.array([], dtype=np.float32)
             except queue.Empty:
                 continue
 
         # Обработка остатка при остановке
-        if len(buffer) >= self.sample_rate:
-            self._transcribe(buffer)
+        if len(buffer) >= self.capture_sample_rate:
+            audio_for_whisper = self._resample(
+                buffer,
+                self.capture_sample_rate,
+                self.whisper_sample_rate
+            )
+            self._transcribe(audio_for_whisper)
 
     def _transcribe(self, audio):
         if self.model is None or self.processor is None or self.on_text is None:
             return
 
         try:
-            # Подготовка входных данных
             inputs = self.processor(
                 audio,
-                sampling_rate=self.sample_rate,
+                sampling_rate=self.whisper_sample_rate,
                 return_tensors="pt"
             )
-
-            # Переносим на нужное устройство
             input_features = inputs.input_features.to(self.device)
 
-            # Генерация
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     input_features,
-                    max_length=448,  # можно настроить
+                    max_length=448,
                     temperature=0.0,
                     do_sample=False,
                     num_beams=1,
                 )
 
-            # Декодируем
             text = self.processor.batch_decode(
                 generated_ids,
                 skip_special_tokens=True
