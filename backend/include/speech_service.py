@@ -2,12 +2,14 @@ import threading
 import numpy as np
 import sounddevice as sd
 import queue
-from transformers import pipeline
+import torch
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
 
 class SpeechService:
     def __init__(self):
         self.model = None
+        self.processor = None
         self.stream = None
         self.running = False
         self.audio_queue = queue.Queue()
@@ -15,28 +17,45 @@ class SpeechService:
         self.sample_rate = 16000
         self.on_text = None
         self.input_device_id = None
+        self.device = "cpu"  # по умолчанию CPU, можно поменять
 
     def _has_cuda(self):
         try:
-            import torch
             return torch.cuda.is_available()
         except Exception:
             return False
 
     def load_model(self):
+        """Загружает модель Whisper и процессор."""
         if self.model is None:
-            print("Скачивание STT модели ну жди короче")
+            print("Скачиваю STT модель Whisper Large v3 Turbo...")
+            model_name = "openai/whisper-large-v3-turbo"
             use_cuda = self._has_cuda()
-            self.model = pipeline(
-                "automatic-speech-recognition",
-                model="openai/whisper-large-v3-turbo",
-                device="cuda" if use_cuda else "cpu",
-                torch_dtype="float16" if use_cuda else "float32",
+
+            if use_cuda:
+                self.device = "cuda"
+                dtype = torch.float16
+            else:
+                self.device = "cpu"
+                dtype = torch.float32
+
+            # Процессор
+            self.processor = AutoProcessor.from_pretrained(model_name)
+
+            # Модель
+            self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_name,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+                use_safetensors=True,
             )
-            print("Готово жми жми!")
+            self.model.to(self.device)
+            self.model.eval()
+            print("STT модель готова!")
 
     def set_input_device(self, device_id):
-        self.input_device_id = int(device_id) if device_id else None
+        """Устанавливает ID микрофона (может быть None для автоматического выбора)."""
+        self.input_device_id = int(device_id) if device_id is not None else None
 
     def start(self, on_text_callback):
         if self.running:
@@ -51,6 +70,25 @@ class SpeechService:
         self.running = True
 
         try:
+            # Если input_device_id None, sounddevice сам выберет микрофон по умолчанию.
+            # Можно также получить список устройств и выбрать первое входное, если None.
+            if self.input_device_id is None:
+                # Попробуем взять системное устройство по умолчанию
+                default_input = sd.default.device[0]
+                if default_input is not None and default_input >= 0:
+                    self.input_device_id = default_input
+                    print(f"Использую микрофон по умолчанию (device_id={self.input_device_id})")
+                else:
+                    # Если default не задан, попробуем найти первый входной девайс
+                    devices = sd.query_devices()
+                    for i, dev in enumerate(devices):
+                        if dev['max_input_channels'] > 0:
+                            self.input_device_id = i
+                            print(f"Автоматически выбран микрофон: {dev['name']} (id={i})")
+                            break
+                    if self.input_device_id is None:
+                        raise ValueError("Не найден входной аудиоустройство")
+
             self.stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=1,
@@ -87,17 +125,45 @@ class SpeechService:
                     buffer = np.array([], dtype=np.float32)
             except queue.Empty:
                 continue
+
+        # Обработка остатка при остановке
         if len(buffer) >= self.sample_rate:
             self._transcribe(buffer)
 
     def _transcribe(self, audio):
-        if self.model is None or self.on_text is None:
+        if self.model is None or self.processor is None or self.on_text is None:
             return
+
         try:
-            result = self.model(audio, chunk_length_s=30, return_timestamps=False)
-            text = (result.get("text") or "").strip()
+            # Подготовка входных данных
+            inputs = self.processor(
+                audio,
+                sampling_rate=self.sample_rate,
+                return_tensors="pt"
+            )
+
+            # Переносим на нужное устройство
+            input_features = inputs.input_features.to(self.device)
+
+            # Генерация
+            with torch.no_grad():
+                generated_ids = self.model.generate(
+                    input_features,
+                    max_length=448,  # можно настроить
+                    temperature=0.0,
+                    do_sample=False,
+                    num_beams=1,
+                )
+
+            # Декодируем
+            text = self.processor.batch_decode(
+                generated_ids,
+                skip_special_tokens=True
+            )[0].strip()
+
             if text:
                 self.on_text(text)
+
         except Exception as e:
             print(f"[STT] Transcribe error: {e}")
 

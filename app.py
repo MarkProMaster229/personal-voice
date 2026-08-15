@@ -1,8 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
-
-from backend.business_logic import session
+from backend.business_logic import session, ollama_manager
 
 FRONT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -12,11 +11,9 @@ def create_app(session):
     CORS(app)
     app.config['SESSION'] = session
 
-
     @app.route('/')
     def index():
         return send_from_directory(FRONT_DIR, 'front.html', mimetype='text/html')
-
 
     @app.route('/front_css.css')
     def serve_css():
@@ -29,7 +26,6 @@ def create_app(session):
     @app.route('/<path:filename>')
     def static_files(filename):
         return send_from_directory(FRONT_DIR, filename)
-
 
     @app.route("/api/devices")
     def get_devices():
@@ -48,7 +44,6 @@ def create_app(session):
                 label = d["label"]
         ok, msg = s.set_device(kind, dev_id, label)
         return jsonify({"ok": ok, "message": msg})
-
 
     @app.route("/api/presets", methods=["GET"])
     def get_presets():
@@ -81,7 +76,6 @@ def create_app(session):
         ok, msg = s.set_preset(data.get("id"))
         return jsonify({"ok": ok, "message": msg})
 
-
     @app.route("/api/command", methods=["POST"])
     def command():
         s = app.config['SESSION']
@@ -113,6 +107,37 @@ def create_app(session):
     def logs():
         since = int(request.args.get("since", 0))
         return jsonify(app.config['SESSION'].get_logs(since))
+
+    # ------------------- OLLAMA ROUTES -------------------
+    @app.route("/api/ollama/status")
+    def ollama_status():
+        return jsonify(ollama_manager.check_status())
+
+    @app.route("/api/ollama/install", methods=["POST"])
+    def ollama_install():
+        ok = ollama_manager.download_and_install()
+        return jsonify({"ok": ok})
+
+    @app.route("/api/ollama/models")
+    def ollama_models():
+        available = ollama_manager.get_available_models()
+        installed = ollama_manager.get_installed_models()
+        installed_ids = {m.get("name") for m in installed}
+        result = []
+        for model in available:
+            model_copy = model.copy()
+            model_copy["installed"] = model["id"] in installed_ids
+            result.append(model_copy)
+        return jsonify(result)
+
+    @app.route("/api/ollama/models/download", methods=["POST"])
+    def ollama_download_model():
+        data = request.get_json() or {}
+        model_id = data.get("id")
+        if not model_id:
+            return jsonify({"ok": False, "message": "Не указан id модели"}), 400
+        result = ollama_manager.download_model(model_id)
+        return jsonify(result)
 
     return app
 

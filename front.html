@@ -53,6 +53,20 @@
       </div>
     </main>
 
+    <!-- НОВЫЙ БЛОК OLLAMA -->
+    <aside class="box ollama-box" id="ollamaBox">
+      <div class="logs-head"><span class="lbl">Ollama</span></div>
+      <div id="ollamaStatus">Проверка...</div>
+      <div id="ollamaActions" style="display:none; margin-top: 10px;">
+        <button id="btnInstallOllama" class="m-btn primary">Скачать и установить Ollama</button>
+      </div>
+      <div id="ollamaModels" style="display:none; margin-top: 10px;">
+        <label class="lbl">Выберите модель:</label>
+        <select id="selModel" class="inp" style="width: 100%;"></select>
+        <button id="btnDownloadModel" class="m-btn primary" style="margin-top: 5px;">Скачать модель</button>
+      </div>
+    </aside>
+
     <aside class="box logs">
       <div class="logs-head"><span class="lbl">Логи</span></div>
       <div class="log" id="log"></div>

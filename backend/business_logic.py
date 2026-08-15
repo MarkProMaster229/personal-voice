@@ -2,7 +2,9 @@ from backend.session import Session
 from backend.include.engineModel import Engine_model
 from backend.include.audioService import AudioService
 from backend.include.speech_service import SpeechService
+from backend.include.downloader import OllamaManager
 
+ollama_manager = OllamaManager()
 ollama_engine = Engine_model()
 audio_service = AudioService()
 speech_service = SpeechService()
@@ -13,29 +15,50 @@ session = Session(
     speech_instance=speech_service,
 )
 
+
 def on_session_start():
     print(">>> БИЗНЕС-ЛОГИКА: запуск распознавания речи")
+    ok, msg = speech_service.start(session._on_transcript)
+    if not ok:
+        session.running = False
+        session._add_log("err", f"Не удалось запустить STT: {msg}")
+        print(f"[ERROR] {msg}")
+
 
 def on_session_stop():
     print(">>> БИЗНЕС-ЛОГИКА: остановка")
+    speech_service.stop()
+
 
 def on_session_pause():
-    print(">>> БИЗНЕС-ЛОГИКА: пауза (логи не пишутся, STT идёт)")
+    print(">>> БИЗНЕС-ЛОГИКА: пауза (STT продолжает работать)")
+
 
 def on_session_resume():
     print(">>> БИЗНЕС-ЛОГИКА: продолжение")
 
+
 def on_rate_changed(value):
     print(f">>> скорость: {value:.2f}×")
 
+
 def on_volume_changed(value):
-    print(f">>> громкость: {int(value*100)}%")
+    print(f">>> громкость: {int(value * 100)}%")
+
 
 def on_preset_changed(preset_id, name, prompt):
     print(f">>> пресет: {name}")
+    ollama_engine.set_active_prompt(prompt)
+    ollama_engine.current_preset_id = preset_id
+
 
 def on_device_changed(kind, device_id, label):
     print(f">>> устройство: {kind} — '{label}'")
+    if kind == "input":
+        speech_service.set_input_device(device_id)
+    else:
+        audio_service.switch_device(kind, device_id)
+
 
 session.on_start = on_session_start
 session.on_stop = on_session_stop

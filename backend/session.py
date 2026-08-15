@@ -1,6 +1,5 @@
 import time
 
-
 class Session:
     def __init__(self, engine_instance, audio_instance, speech_instance):
         self.running = False
@@ -14,7 +13,6 @@ class Session:
 
         self.active_preset = self.engine.current_preset_id
 
-        # Коллбэки
         self.on_start = None
         self.on_stop = None
         self.on_pause = None
@@ -41,14 +39,11 @@ class Session:
     def _on_transcript(self, text):
         if self.paused:
             return
-        self._add_log("in", text)  # попадает в UI в виде лога "входящего" текста
+        self._add_log("in", text)
 
     def start(self):
         if self.running:
             return False, "Уже запущено"
-        ok, msg = self.speech.start(self._on_transcript)
-        if not ok:
-            return False, msg
         self.running = True
         self.paused = False
         self._add_log("out", "▶ Старт")
@@ -59,7 +54,6 @@ class Session:
     def stop(self):
         if not self.running:
             return False, "Не запущено"
-        self.speech.stop()
         self.running = False
         self.paused = False
         self._add_log("out", "■ Стоп")
@@ -100,9 +94,7 @@ class Session:
         return True, f"Громкость: {int(value * 100)}%"
 
     def set_device(self, kind, device_id, device_label):
-        if kind == "input":
-            self.speech.set_input_device(device_id)
-        self.audio.switch_device(kind, device_id)
+        # Никаких прямых вызовов сервисов, только уведомление
         self._add_log("sys", f"Устройство ({kind}): {device_label}")
         if self.on_device_change:
             self.on_device_change(kind, device_id, device_label)
@@ -116,8 +108,6 @@ class Session:
         if not data:
             return False, f"Пресет {preset_id} не найден"
         self.active_preset = preset_id
-        self.engine.set_active_prompt(data["prompt"])
-        self.engine.current_preset_id = preset_id
         self._add_log("sys", f"Пресет: {data['name']}")
         if self.on_preset_change:
             self.on_preset_change(preset_id, data["name"], data["prompt"])

@@ -10,6 +10,15 @@ const modal = $('#presetModal'), modalTitle = $('#modalTitle'), modalClose = $('
 const pName = $('#pName'), pPrompt = $('#pPrompt');
 const btnSave = $('#btnSave'), btnCancel = $('#btnCancel'), btnDelete = $('#btnDelete');
 
+// Новые элементы для Ollama
+const ollamaBox = $('#ollamaBox');
+const ollamaStatus = $('#ollamaStatus');
+const ollamaActions = $('#ollamaActions');
+const ollamaModels = $('#ollamaModels');
+const btnInstallOllama = $('#btnInstallOllama');
+const selModel = $('#selModel');
+const btnDownloadModel = $('#btnDownloadModel');
+
 const ICON_PLAY = '<svg width="18" height="18" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z" fill="currentColor"/></svg>';
 const ICON_STOP = '<svg width="18" height="18" viewBox="0 0 16 16"><path d="M3.5 3.5h9v9h-9z" fill="currentColor"/></svg>';
 const ICON_PAUSE = '<svg width="18" height="18" viewBox="0 0 16 16"><path d="M4 2h3v12H4zM9 2h3v12H9z" fill="currentColor"/></svg>';
@@ -19,7 +28,6 @@ let presets = [];
 let activePresetId = null;
 let logCount = 0;
 let editingPreset = null;
-
 
 const Backend = {
   async getDevices() {
@@ -90,11 +98,115 @@ const Backend = {
   async getLogs(since) {
     const r = await fetch(`/api/logs?since=${since}`);
     return await r.json();
+  },
+
+  // НОВЫЕ МЕТОДЫ ДЛЯ OLLAMA
+  async getOllamaStatus() {
+    try {
+      const r = await fetch('/api/ollama/status');
+      return await r.json();
+    } catch { return { installed: false, running: false }; }
+  },
+  async installOllama() {
+    const r = await fetch('/api/ollama/install', { method: 'POST' });
+    return await r.json();
+  },
+  async getOllamaModels() {
+    try {
+      const r = await fetch('/api/ollama/models');
+      return await r.json();
+    } catch { return []; }
+  },
+  async downloadModel(modelId) {
+    const r = await fetch('/api/ollama/models/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: modelId })
+    });
+    return await r.json();
   }
 };
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// --- ОБРАБОТКА OLLAMA ---
+
+async function initOllama() {
+  try {
+    const status = await Backend.getOllamaStatus();
+    renderOllamaStatus(status);
+  } catch (e) {
+    console.error('initOllama error:', e);
+    ollamaStatus.textContent = 'Ошибка проверки Ollama';
+  }
+}
+
+function renderOllamaStatus(status) {
+  if (!status.installed) {
+    ollamaStatus.textContent = 'Ollama не установлен';
+    ollamaActions.style.display = 'block';
+    ollamaModels.style.display = 'none';
+  } else if (!status.running) {
+    ollamaStatus.textContent = 'Ollama установлен, но не запущен';
+    ollamaActions.style.display = 'block'; // можно сделать кнопку запуска, но для MVP просто покажем инструкцию
+    ollamaModels.style.display = 'none';
+  } else {
+    ollamaStatus.textContent = 'Ollama работает';
+    ollamaActions.style.display = 'none';
+    ollamaModels.style.display = 'block';
+    loadOllamaModels();
+  }
+}
+
+async function loadOllamaModels() {
+  try {
+    const models = await Backend.getOllamaModels();
+    selModel.innerHTML = '';
+    if (models.length === 0) {
+      selModel.add(new Option('Нет доступных моделей', ''));
+      return;
+    }
+    models.forEach(m => {
+      selModel.add(new Option(m.name, m.id));
+    });
+  } catch (e) {
+    console.error('loadOllamaModels error:', e);
+    selModel.innerHTML = '';
+    selModel.add(new Option('Ошибка загрузки', ''));
+  }
+}
+
+btnInstallOllama.onclick = async () => {
+  btnInstallOllama.disabled = true;
+  btnInstallOllama.textContent = 'Установка...';
+  const res = await Backend.installOllama();
+  if (res.ok) {
+    renderLog({ time: new Date().toLocaleTimeString(), type: 'sys', msg: 'Ollama установлен, перезагрузите страницу' });
+    btnInstallOllama.textContent = 'Перезагрузить страницу';
+    btnInstallOllama.onclick = () => location.reload();
+  } else {
+    btnInstallOllama.disabled = false;
+    btnInstallOllama.textContent = 'Скачать и установить Ollama';
+    renderLog({ time: new Date().toLocaleTimeString(), type: 'err', msg: 'Ошибка установки Ollama' });
+  }
+};
+
+btnDownloadModel.onclick = async () => {
+  const modelId = selModel.value;
+  if (!modelId) return;
+  btnDownloadModel.disabled = true;
+  btnDownloadModel.textContent = 'Загрузка...';
+  const res = await Backend.downloadModel(modelId);
+  if (res.ok) {
+    renderLog({ time: new Date().toLocaleTimeString(), type: 'sys', msg: `Модель ${modelId} загружена` });
+  } else {
+    renderLog({ time: new Date().toLocaleTimeString(), type: 'err', msg: 'Ошибка загрузки модели' });
+  }
+  btnDownloadModel.disabled = false;
+  btnDownloadModel.textContent = 'Скачать модель';
+};
+
+// --- ОСТАЛЬНОЙ КОД (без изменений, кроме вставки initOllama в контроллер) ---
 
 function renderLog(e) {
   const near = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 50;
@@ -106,7 +218,6 @@ function renderLog(e) {
   if (near) logBox.scrollTop = logBox.scrollHeight;
 }
 
-
 async function loadDevices() {
   const d = await Backend.getDevices();
   selMic.innerHTML = '';
@@ -116,7 +227,6 @@ async function loadDevices() {
 }
 selMic.onchange = () => Backend.setDevice('input', selMic.value);
 selOut.onchange = () => Backend.setDevice('output', selOut.value);
-
 
 function paint(s) {
   const p = ((s.value - s.min) / (s.max - s.min)) * 100;
@@ -137,7 +247,6 @@ sldVol.oninput = () => {
   Backend.cmd('set_volume', { value: parseFloat(sldVol.value) });
 };
 
-
 async function loadPresets() {
   presets = await Backend.getPresets();
   try {
@@ -157,13 +266,11 @@ function renderPresets() {
     c.className = (p.readonly ? 'chip default' : 'chip user') + (p.id === activePresetId ? ' active' : '');
     c.innerHTML = `<span>${esc(p.name)}</span>`;
 
-
     c.onclick = async () => {
       await Backend.selectPreset(p.id);
       activePresetId = p.id;
       renderPresets();
     };
-
 
     if (!p.readonly) {
       c.ondblclick = () => openEditor(p);
@@ -172,7 +279,6 @@ function renderPresets() {
     chips.appendChild(c);
   });
 }
-
 
 function openEditor(preset) {
   editingPreset = preset || null;
@@ -225,7 +331,6 @@ btnDelete.onclick = async () => {
   await loadPresets();
 };
 
-
 function ui() {
   btnStart.innerHTML = running ? ICON_STOP : ICON_PLAY;
   btnStart.title = running ? 'Стоп' : 'Старт';
@@ -255,7 +360,6 @@ btnPause.onclick = async () => {
   ui();
 };
 
-
 async function poll() {
   try {
     const logs = await Backend.getLogs(logCount);
@@ -275,13 +379,222 @@ async function poll() {
       renderPresets();
     }
   } catch (e) {
-    // Рома какой ваш любимый цвет?
+    // ignore
   }
 }
 
+// ---- КОНТРОЛЛЕР (изменён для поддержки новых методов) ----
+class Controller {
+  constructor(baseUrl = '') {
+    this.baseUrl = baseUrl;
+    this.state = {
+      running: false,
+      paused: false,
+      presets: [],
+      activePreset: null,
+      logCount: 0
+    };
+    this.pollInterval = null;
+    this.init();
+  }
+  patchBackend() {
+    const self = this;
+    
+    // Сохраняем старый Backend (возможно, с нашими методами)
+    const existingBackend = window.Backend || {};
 
-updSliders();
-ui();
-loadDevices();
-loadPresets();
-setInterval(poll, 500);
+    window.Backend = Object.assign({}, existingBackend, {
+      getDevices: () =>
+        fetch(`${self.baseUrl}/api/devices`)
+          .then(r => r.json())
+          .catch(e => {
+            console.error('getDevices error:', e);
+            return { inputs: [], outputs: [] };
+          }),
+      
+      setDevice: (kind, id) =>
+        fetch(`${self.baseUrl}/api/devices/set`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind, id })
+        }).then(r => r.json())
+          .catch(() => ({ ok: true })),
+      
+      getPresets: () =>
+        fetch(`${self.baseUrl}/api/presets`)
+          .then(r => r.json())
+          .then(list => {
+            self.state.presets = list;
+            return list;
+          })
+          .catch(e => {
+            console.error('getPresets error:', e);
+            return [];
+          }),
+      
+      cmd: (command, extra = {}) => {
+        const body = { cmd: command, ...extra };
+        return fetch(`${self.baseUrl}/api/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+          .then(r => r.json())
+          .then(res => {
+            if (!res.ok) throw new Error(res.error || 'Command failed');
+            switch(command) {
+              case 'start':
+                self.state.running = true;
+                self.state.paused = false;
+                break;
+              case 'stop':
+                self.state.running = false;
+                self.state.paused = false;
+                break;
+              case 'pause':
+                self.state.paused = true;
+                break;
+              case 'resume':
+                self.state.paused = false;
+                break;
+            }
+            
+            self.syncUI();
+            return res;
+          })
+          .catch(e => {
+            renderLog({ 
+              time: new Date().toLocaleTimeString(), 
+              type: 'err', 
+              msg: `Ошибка команды ${command}: ${e.message}` 
+            });
+            throw e;
+          });
+      }
+    });
+
+    // Добавляем методы Ollama (переопределяем или сохраняем)
+    window.Backend.getOllamaStatus = () =>
+      fetch(`${self.baseUrl}/api/ollama/status`).then(r => r.json()).catch(() => ({installed:false, running:false}));
+    window.Backend.installOllama = () =>
+      fetch(`${self.baseUrl}/api/ollama/install`, {method:'POST'}).then(r => r.json());
+    window.Backend.getOllamaModels = () =>
+      fetch(`${self.baseUrl}/api/ollama/models`).then(r => r.json()).catch(() => []);
+    window.Backend.downloadModel = (modelId) =>
+      fetch(`${self.baseUrl}/api/ollama/models/download`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ id: modelId })
+      }).then(r => r.json());
+  }
+
+  patchButtons() {
+    const self = this;
+    
+    btnStart.onclick = async () => {
+      const cmd = self.state.running ? 'stop' : 'start';
+      try {
+        await Backend.cmd(cmd);
+      } catch (e) {
+      }
+    };
+
+    btnPause.onclick = async () => {
+      if (!self.state.running) return;
+      const cmd = self.state.paused ? 'resume' : 'pause';
+      try {
+        await Backend.cmd(cmd);
+      } catch (e) {
+      }
+    };
+  }
+
+  patchSliders() {
+    const self = this;
+    const originalRateInput = sldRate.oninput;
+    const originalVolInput = sldVol.oninput;
+    
+    sldRate.oninput = (e) => {
+      if (originalRateInput) originalRateInput(e);
+      const value = parseFloat(sldRate.value);
+      Backend.cmd('set_rate', { value });
+    };
+    
+    sldVol.oninput = (e) => {
+      if (originalVolInput) originalVolInput(e);
+      const value = parseFloat(sldVol.value);
+      Backend.cmd('set_volume', { value });
+    };
+  }
+
+  syncUI() {
+    window.running = this.state.running;
+    window.paused = this.state.paused;
+    if (typeof ui === 'function') {
+      ui();
+    }
+  }
+
+  startPolling(intervalMs = 500) {
+    this.pollInterval = setInterval(async () => {
+      try {
+        const logsResp = await fetch(`${this.baseUrl}/api/logs?since=${this.state.logCount}`)
+          .then(r => r.json());
+        
+        if (logsResp.logs && logsResp.logs.length > 0) {
+          logsResp.logs.forEach(entry => {
+            if (typeof renderLog === 'function') {
+              renderLog(entry);
+            }
+          });
+          this.state.logCount = logsResp.count;
+        }
+        
+        const serverState = await fetch(`${this.baseUrl}/api/state`)
+          .then(r => r.json());
+        
+        if (serverState.running !== this.state.running || 
+            serverState.paused !== this.state.paused) {
+          this.state.running = serverState.running;
+          this.state.paused = serverState.paused;
+          this.syncUI();
+        }
+        
+      } catch (e) {
+        console.warn('Polling error:', e.message);
+      }
+    }, intervalMs);
+  }
+
+  init() {
+    console.log('Controller: init start');
+    
+    this.patchBackend();
+    this.patchButtons();
+    this.patchSliders();
+    this.startPolling();
+    
+    setTimeout(() => {
+      if (typeof loadDevices === 'function') loadDevices();
+      if (typeof loadPresets === 'function') loadPresets();
+      if (typeof initOllama === 'function') initOllama();  // <-- добавлен вызов
+      console.log('Controller: ready');
+    }, 100);
+  }
+
+  destroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+}
+
+// Запуск
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    new Controller('');
+  });
+} else {
+  new Controller('');
+}

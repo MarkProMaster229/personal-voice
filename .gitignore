@@ -1,3 +1,8 @@
 backend/__pycache__/__init__.cpython-314.pyc
 backend/__pycache__/session.cpython-314.pyc
 backend/__pycache__/business_logic.cpython-314.pyc
+backend/include/__pycache__/__init__.cpython-314.pyc
+backend/include/__pycache__/downloader.cpython-314.pyc
+backend/include/__pycache__/audioService.cpython-314.pyc
+backend/include/__pycache__/engineModel.cpython-314.pyc
+backend/include/__pycache__/speech_service.cpython-314.pyc
