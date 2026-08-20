@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
-from backend.business_logic import session, ollama_manager
+from backend.business_logic import session, ollama_manager, pause, resume, get_settings, update_settings
 
 FRONT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -76,6 +76,15 @@ def create_app(session):
         ok, msg = s.set_preset(data.get("id"))
         return jsonify({"ok": ok, "message": msg})
 
+    @app.route("/api/settings", methods=["GET"])
+    def settings_get():
+        return jsonify(get_settings())
+
+    @app.route("/api/settings", methods=["POST"])
+    def settings_post():
+        data = request.get_json() or {}
+        return jsonify(update_settings(data))
+
     @app.route("/api/command", methods=["POST"])
     def command():
         s = app.config['SESSION']
@@ -87,9 +96,9 @@ def create_app(session):
         elif cmd == "stop":
             ok, msg = s.stop()
         elif cmd == "pause":
-            ok, msg = s.pause()
+            ok, msg = pause()
         elif cmd == "resume":
-            ok, msg = s.resume()
+            ok, msg = resume()
         elif cmd == "set_sensitivity":
             ok, msg = s.set_sensitivity(float(data.get("value", 0.01)))
         elif cmd == "set_rate":

@@ -1,4 +1,3 @@
-// Глобальные переменные и DOM-элементы
 const $ = s => document.querySelector(s);
 const logBox = $('#log'), led = $('#led'), statusText = $('#statusText');
 const selMic = $('#selMic'), selOut = $('#selOut');
@@ -25,18 +24,16 @@ let editingPreset = null;
 
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
-// --- Логи ---
 function renderLog(e) {
   const near = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 50;
   const el = document.createElement('div');
   el.className = 'log-entry ' + (e.type || 'sys');
-  el.innerHTML = `<span class="t">[${e.time}]</span>${esc(e.msg)}`;
+  el.innerHTML = '<span class="t">[' + e.time + ']</span>' + esc(e.msg);
   logBox.appendChild(el);
   while (logBox.children.length > 300) logBox.removeChild(logBox.firstChild);
   if (near) logBox.scrollTop = logBox.scrollHeight;
 }
 
-// --- Устройства ---
 async function loadDevices() {
   const d = await Backend.getDevices();
   selMic.innerHTML = '';
@@ -47,10 +44,9 @@ async function loadDevices() {
 selMic.onchange = () => Backend.setDevice('input', selMic.value);
 selOut.onchange = () => Backend.setDevice('output', selOut.value);
 
-// --- Слайдеры ---
 function paint(s) {
   const p = ((s.value - s.min) / (s.max - s.min)) * 100;
-  s.style.background = `linear-gradient(90deg, var(--orange) ${p}%, var(--dark) ${p}%)`;
+  s.style.background = 'linear-gradient(90deg, var(--orange) ' + p + '%, var(--dark) ' + p + '%)';
 }
 function updSliders() {
   rateVal.textContent = (+sldRate.value).toFixed(2) + '×';
@@ -61,13 +57,12 @@ function updSliders() {
 sldRate.oninput = () => { updSliders(); Backend.cmd('set_rate', { value: parseFloat(sldRate.value) }); };
 sldVol.oninput = () => { updSliders(); Backend.cmd('set_volume', { value: parseFloat(sldVol.value) }); };
 
-// --- Пресеты ---
 async function loadPresets() {
   presets = await Backend.getPresets();
   try {
     const st = await Backend.getState();
     if (st.active_preset) activePresetId = st.active_preset;
-  } catch {}
+  } catch (e) {}
   renderPresets();
 }
 
@@ -79,7 +74,7 @@ function renderPresets() {
   presets.forEach(p => {
     const c = document.createElement('div');
     c.className = (p.readonly ? 'chip default' : 'chip user') + (p.id === activePresetId ? ' active' : '');
-    c.innerHTML = `<span>${esc(p.name)}</span>`;
+    c.innerHTML = '<span>' + esc(p.name) + '</span>';
     c.onclick = async () => {
       await Backend.selectPreset(p.id);
       activePresetId = p.id;
@@ -143,7 +138,6 @@ btnDelete.onclick = async () => {
   await loadPresets();
 };
 
-// --- Общий UI ---
 function ui() {
   btnStart.innerHTML = running ? ICON_STOP : ICON_PLAY;
   btnStart.title = running ? 'Стоп' : 'Старт';
@@ -167,7 +161,6 @@ function ui() {
   }
 }
 
-// --- Polling ---
 async function poll() {
   try {
     const logs = await Backend.getLogs(logCount);

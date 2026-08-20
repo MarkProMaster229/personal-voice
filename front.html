@@ -17,7 +17,9 @@
     <main class="left">
       <div class="row r2">
         <section class="box">
-          <label class="lbl">Микрофон</label>
+          <label class="lbl">Микрофон
+            <button class="icon-btn" id="btnMicSettings" title="Настройки микрофона"><img src="assets/settings.png" alt="⚙"></button>
+          </label>
           <select id="selMic"><option>загрузка…</option></select>
         </section>
         <section class="box">
@@ -93,9 +95,32 @@
   </div>
 </div>
 
+<div class="modal" id="micSettingsModal">
+  <div class="modal-box small">
+    <div class="modal-head">
+      <span>Настройки микрофона</span>
+    </div>
+    <label class="check"><input type="checkbox" id="chkPTT"> Прослушивание микрофона по нажатию</label>
+    <div class="set-row">
+      <span class="lbl">Клавиша</span>
+      <button class="inp key-btn" id="btnKey">P</button>
+      <span class="lbl">Тип</span>
+      <select id="selPttMode">
+        <option value="hold">Зажатие</option>
+        <option value="toggle">Переключение</option>
+      </select>
+    </div>
+    <label class="check"><input type="checkbox" id="chkOverlay"> Оверлей</label>
+    <div class="modal-foot">
+      <button class="m-btn primary" id="btnSettingsClose">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Подключаем модули JS в правильном порядке -->
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/settings.js"></script>
 <script src="js/ollama.js"></script>
 <script src="js/recorder.js"></script>
 <script src="js/app.js"></script>

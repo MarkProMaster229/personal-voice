@@ -26,6 +26,7 @@ class Session:
         self.on_transcript = None
         self.on_record_start = None
         self.on_record_stop = None
+        self.on_error = None
 
         self.logs = []
         self._add_log("sys", "Сессия создана")
@@ -75,24 +76,6 @@ class Session:
         if self.on_stop:
             self.on_stop()
         return True, "Остановлено"
-
-    def pause(self):
-        if not self.running or self.paused:
-            return False, "Нельзя поставить на паузу"
-        self.paused = True
-        self._add_log("out", "⏸ Пауза")
-        if self.on_pause:
-            self.on_pause()
-        return True, "Пауза"
-
-    def resume(self):
-        if not self.running or not self.paused:
-            return False, "Не на паузе"
-        self.paused = False
-        self._add_log("out", "▶ Продолжение")
-        if self.on_resume:
-            self.on_resume()
-        return True, "Продолжено"
 
     def set_rate(self, value):
         self.rate = value
@@ -160,6 +143,8 @@ class Session:
                 self.on_record_start()
         else:
             self._add_log("err", msg)
+            if self.on_error:
+                self.on_error(msg)
         return ok, msg
 
     def stop_recording(self):
