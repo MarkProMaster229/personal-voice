@@ -17,6 +17,9 @@ except Exception:
         def set_state(self, state):
             pass
 
+        def configure(self, **kwargs):
+            pass
+
 ollama_manager = OllamaManager()
 ollama_engine = Engine_model()
 audio_service = AudioService()
@@ -30,6 +33,10 @@ settings = {
     "ptt_key": "KeyP",
     "ptt_mode": "hold",
     "overlay_enabled": False,
+    "overlay_size": 32,
+    "overlay_opacity": 1.0,
+    "overlay_x": 50,
+    "overlay_y": 72,
 }
 
 session = Session(
@@ -92,6 +99,9 @@ def resume():
 
 def on_session_error(msg):
     overlay.set_state("issue")
+
+def on_record_stop_handler():
+    print(">>> БИЗНЕС-ЛОГИКА: запись отправлена в конвейер")
 
 def on_rate_changed(value):
     print(f">>> скорость: {value:.2f}×")
@@ -157,7 +167,29 @@ def update_settings(data):
     if "overlay_enabled" in data:
         settings["overlay_enabled"] = bool(data["overlay_enabled"])
         overlay.set_enabled(settings["overlay_enabled"])
-        refresh_overlay_state()
+    try:
+        settings["overlay_size"] = max(16, min(128, int(data.get("overlay_size", settings["overlay_size"]))))
+    except Exception:
+        pass
+    try:
+        settings["overlay_opacity"] = max(0.1, min(1.0, float(data.get("overlay_opacity", settings["overlay_opacity"]))))
+    except Exception:
+        pass
+    try:
+        settings["overlay_x"] = max(0, min(100, int(data.get("overlay_x", settings["overlay_x"]))))
+    except Exception:
+        pass
+    try:
+        settings["overlay_y"] = max(0, min(100, int(data.get("overlay_y", settings["overlay_y"]))))
+    except Exception:
+        pass
+    overlay.configure(
+        size=settings["overlay_size"],
+        opacity=settings["overlay_opacity"],
+        x=settings["overlay_x"],
+        y=settings["overlay_y"],
+    )
+    refresh_overlay_state()
     save_settings()
     return dict(settings)
 
@@ -180,7 +212,14 @@ session.on_preset_change = on_preset_changed
 session.on_device_change = on_device_changed
 session.on_transcript = on_transcript_handler
 session.on_error = on_session_error
+session.on_record_stop = on_record_stop_handler
 
 load_settings()
+overlay.configure(
+    size=settings["overlay_size"],
+    opacity=settings["overlay_opacity"],
+    x=settings["overlay_x"],
+    y=settings["overlay_y"],
+)
 overlay.set_enabled(settings["overlay_enabled"])
 refresh_overlay_state()

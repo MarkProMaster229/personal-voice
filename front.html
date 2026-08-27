@@ -111,13 +111,23 @@
       </select>
     </div>
     <label class="check"><input type="checkbox" id="chkOverlay"> Оверлей</label>
+    <div class="set-col">
+      <label class="lbl">Размер иконки <b id="ovSizeVal">32px</b></label>
+      <input type="range" id="sldOvSize" min="16" max="128" step="4" value="32">
+      <label class="lbl">Прозрачность <b id="ovAlphaVal">100%</b></label>
+      <input type="range" id="sldOvAlpha" min="10" max="100" step="5" value="100">
+      <label class="lbl">Позиция X <b id="ovXVal">50%</b></label>
+      <input type="range" id="sldOvX" min="0" max="100" step="1" value="50">
+      <label class="lbl">Позиция Y <b id="ovYVal">72%</b></label>
+      <input type="range" id="sldOvY" min="0" max="100" step="1" value="72">
+    </div>
     <div class="modal-foot">
       <button class="m-btn primary" id="btnSettingsClose">Закрыть</button>
     </div>
   </div>
 </div>
 
-<!-- Подключаем модули JS в правильном порядке -->
+
 <script src="js/api.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/settings.js"></script>

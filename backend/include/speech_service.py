@@ -1,8 +1,6 @@
 import threading
 import numpy as np
 import sounddevice as sd
-import torch
-from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 
 
 class SpeechService:
@@ -22,6 +20,8 @@ class SpeechService:
 
     def load_model(self):
         if self.model is None:
+            import torch
+            from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
             print("Скачиваю STT модель Whisper Large v3 Turbo...")
             model_name = "openai/whisper-large-v3-turbo"
             self.processor = AutoProcessor.from_pretrained(model_name)
@@ -154,6 +154,7 @@ class SpeechService:
         if self.model is None or self.processor is None or self.on_text is None:
             return
         try:
+            import torch
             inputs = self.processor(audio, sampling_rate=self.sample_rate, return_tensors="pt")
             input_features = inputs.input_features.to(self.device)
 

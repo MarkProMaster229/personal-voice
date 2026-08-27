@@ -43,8 +43,6 @@ class Session:
         print(f"[{level.upper()}] {msg}")
 
     def _on_transcript(self, text):
-        if self.paused:
-            return
         self._add_log("in", text)
         if self.on_transcript:
             self.on_transcript(text)

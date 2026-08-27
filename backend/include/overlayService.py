@@ -20,7 +20,6 @@ SPRITES = {
     "offline": ["Spriteoffline.png", "SpriteOffline.png"],
 }
 
-ICON_SIZE = 32
 BG = "#FF00FF"
 
 if sys.platform == "win32":
@@ -36,11 +35,16 @@ class OverlayService:
     def __init__(self):
         self.enabled = False
         self.state = "offline"
+        self.icon_size = 32
+        self.opacity = 1.0
+        self.pos_x = 50
+        self.pos_y = 72
         self._queue = queue.Queue()
         self._thread = None
         self._root = None
         self._label = None
         self._images = {}
+        self._loaded_size = None
 
     def set_enabled(self, enabled):
         self.enabled = bool(enabled)
@@ -55,11 +59,22 @@ class OverlayService:
         self.state = state
         self._queue.put(("state", state))
 
+    def configure(self, size=None, opacity=None, x=None, y=None):
+        if size is not None:
+            self.icon_size = int(size)
+        if opacity is not None:
+            self.opacity = float(opacity)
+        if x is not None:
+            self.pos_x = float(x)
+        if y is not None:
+            self.pos_y = float(y)
+        self._queue.put(("refresh", None))
+
     def _prepare(self, pil_img):
-        img = pil_img.resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS).convert("RGBA")
+        img = pil_img.resize((self.icon_size, self.icon_size), Image.LANCZOS).convert("RGBA")
         alpha = img.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
         img.putalpha(alpha)
-        bg = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (255, 0, 255, 255))
+        bg = Image.new("RGBA", (self.icon_size, self.icon_size), (255, 0, 255, 255))
         comp = Image.alpha_composite(bg, img).convert("RGB")
         buf = io.BytesIO()
         comp.save(buf, format="PNG")
@@ -67,8 +82,8 @@ class OverlayService:
 
     def _load_native(self, path):
         img = tk.PhotoImage(file=path)
-        fx = max(1, round(img.width() / ICON_SIZE))
-        fy = max(1, round(img.height() / ICON_SIZE))
+        fx = max(1, round(img.width() / self.icon_size))
+        fy = max(1, round(img.height() / self.icon_size))
         if fx > 1 or fy > 1:
             img = img.subsample(fx, fy)
         return img
@@ -107,6 +122,7 @@ class OverlayService:
                             self._images[key] = self._load_native(blocked_path)
                         except tk.TclError:
                             pass
+        self._loaded_size = self.icon_size
 
     def _run(self):
         root = tk.Tk()
@@ -124,6 +140,10 @@ class OverlayService:
         self._label = label
         try:
             root.attributes("-transparentcolor", BG)
+        except tk.TclError:
+            pass
+        try:
+            root.attributes("-alpha", self.opacity)
         except tk.TclError:
             pass
         self._load_images()
@@ -155,6 +175,7 @@ class OverlayService:
                 kind, value = self._queue.get_nowait()
                 if kind == "enabled":
                     if value:
+                        self._reload_if_needed()
                         self._apply()
                         self._position()
                         self._root.deiconify()
@@ -165,9 +186,22 @@ class OverlayService:
                     if self.enabled:
                         self._apply()
                         self._position()
+                elif kind == "refresh":
+                    if self.enabled:
+                        self._reload_if_needed()
+                        try:
+                            self._root.attributes("-alpha", self.opacity)
+                        except tk.TclError:
+                            pass
+                        self._apply()
+                        self._position()
         except queue.Empty:
             pass
         self._root.after(80, self._poll)
+
+    def _reload_if_needed(self):
+        if self._loaded_size != self.icon_size:
+            self._load_images()
 
     def _apply(self):
         img = self._images.get(self.state)
@@ -180,6 +214,6 @@ class OverlayService:
         root.update_idletasks()
         w = root.winfo_width()
         h = root.winfo_height()
-        x = (root.winfo_screenwidth() - w) // 2
-        y = int(root.winfo_screenheight() * 0.72) - h // 2
+        x = int(root.winfo_screenwidth() * self.pos_x / 100) - w // 2
+        y = int(root.winfo_screenheight() * self.pos_y / 100) - h // 2
         root.geometry(f"+{x}+{y}")

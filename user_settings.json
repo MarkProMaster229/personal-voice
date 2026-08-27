@@ -1,6 +1,10 @@
 {
-  "ptt_enabled": false,
+  "ptt_enabled": true,
   "ptt_key": "KeyP",
   "ptt_mode": "hold",
-  "overlay_enabled": false
+  "overlay_enabled": true,
+  "overlay_size": 40,
+  "overlay_opacity": 1.0,
+  "overlay_x": 50,
+  "overlay_y": 85
 }

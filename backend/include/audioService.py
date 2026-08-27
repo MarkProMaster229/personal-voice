@@ -3,9 +3,7 @@ import time
 import threading
 import numpy as np
 import soundfile as sf
-import torch
 import sounddevice as sd
-from omnivoice import OmniVoice
 
 
 class AudioService:
@@ -28,6 +26,8 @@ class AudioService:
     def load_model(self):
         """Загружает модель OmniVoice один раз."""
         if self.model is None:
+            import torch
+            from omnivoice import OmniVoice
             print("Загружаю модель OmniVoice (CPU)...")
             self.model = OmniVoice.from_pretrained(
                 "k2-fsa/OmniVoice",
